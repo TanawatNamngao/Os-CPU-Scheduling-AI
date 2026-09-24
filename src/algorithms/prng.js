@@ -53,9 +53,10 @@ export const PROCESS_COLORS = [
  * - BT in [1, 8]
  * - q in [1, 4]
  */
-export function generateRandomTaskSet(seedValue, count = 5) {
+export function generateRandomTaskSet(seedValue, count) {
   const prng = createPRNG(seedValue);
-  const taskCount = Math.max(4, Math.min(6, count));
+  // Requirement 1: 5 to 6 tasks when randomized
+  const taskCount = count ? Math.max(4, Math.min(6, count)) : (prng() < 0.5 ? 5 : 6);
 
   // Pick unique course names
   const availableNames = [...COURSE_NAMES];

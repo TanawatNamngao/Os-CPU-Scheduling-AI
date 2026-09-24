@@ -10,6 +10,7 @@ import ComparisonView from './components/ComparisonView.jsx';
 import StudentInfoModal from './components/StudentInfoModal.jsx';
 import TestCasesModal from './components/TestCasesModal.jsx';
 import WorksheetModal from './components/WorksheetModal.jsx';
+import SavedDatasetsModal from './components/SavedDatasetsModal.jsx';
 
 import { generateRandomTaskSet } from './algorithms/prng.js';
 import { runFCFS } from './algorithms/fcfs.js';
@@ -72,6 +73,80 @@ export default function App() {
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isTestCasesModalOpen, setIsTestCasesModalOpen] = useState(false);
   const [isWorksheetModalOpen, setIsWorksheetModalOpen] = useState(false);
+  const [isSavedModalOpen, setIsSavedModalOpen] = useState(false);
+
+  // Requirement 4: Record Seed, parameters, and actual dataset to reproduce problems
+  const [savedDatasets, setSavedDatasets] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('os_saved_datasets') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const handleSaveCurrentDataset = () => {
+    const newItem = {
+      id: 'DATASET-' + Date.now(),
+      savedAt: new Date().toLocaleString('th-TH'),
+      seed,
+      quantum,
+      baseTime,
+      taskCount: tasks.length,
+      tasks: JSON.parse(JSON.stringify(tasks))
+    };
+    const updated = [newItem, ...savedDatasets.filter(d => d.seed !== seed)].slice(0, 20);
+    setSavedDatasets(updated);
+    localStorage.setItem('os_saved_datasets', JSON.stringify(updated));
+    alert(`✅ บันทึก Seed "${seed}" และชุดข้อมูล (${tasks.length} งาน, q=${quantum}) เรียบร้อยแล้ว!`);
+  };
+
+  const handleRecallDataset = (dataset) => {
+    setSeed(dataset.seed);
+    setQuantum(dataset.quantum);
+    setBaseTime(dataset.baseTime || '09:00 วันจันทร์');
+    setTasks(dataset.tasks);
+    setTaskCount(dataset.tasks.length);
+    setValidationError(null);
+  };
+
+  const handleDeleteSavedDataset = (id) => {
+    const updated = savedDatasets.filter(d => d.id !== id);
+    setSavedDatasets(updated);
+    localStorage.setItem('os_saved_datasets', JSON.stringify(updated));
+  };
+
+  const handleExportJSON = () => {
+    const payload = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      seed,
+      quantum,
+      baseTime,
+      tasks
+    };
+    navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    alert('📋 คัดลอกข้อมูลโจทย์ (JSON) ลงในคลิปบอร์ดแล้ว! สามารถนำไปบันทึกหรือเปิดในโปรแกรมรุ่นเดียวกันได้ทันที');
+  };
+
+  const handleImportJSON = (jsonString) => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (!parsed.tasks || !Array.isArray(parsed.tasks) || parsed.tasks.length < 2) {
+        throw new Error('รูปแบบ JSON ไม่ถูกต้อง: ต้องมี tasks เป็น Array อย่างน้อย 2 งาน');
+      }
+      setSeed(parsed.seed || ('IMPORT-' + Math.floor(Math.random() * 10000)));
+      if (parsed.quantum && parsed.quantum >= 1 && parsed.quantum <= 4) {
+        setQuantum(parsed.quantum);
+      }
+      if (parsed.baseTime) setBaseTime(parsed.baseTime);
+      setTasks(parsed.tasks);
+      setTaskCount(parsed.tasks.length);
+      setValidationError(null);
+      alert(`✅ นำเข้าโจทย์เดิมสำเร็จ (${parsed.tasks.length} งาน, q = ${parsed.quantum || quantum})`);
+    } catch (err) {
+      alert('❌ ไม่สามารถนำเข้าข้อมูลได้: ' + err.message);
+    }
+  };
 
   const [hypothesis, setHypothesis] = useState({
     lowestWTAlgo: 'SJF',
@@ -85,16 +160,18 @@ export default function App() {
     setHypothesis(prev => ({ ...prev, [field]: val }));
   };
 
-  // Function to randomize task set with new seed
+  // Requirement 1: Randomize 5-6 tasks from course names with unique IDs P1..Pn
+  // Requirement 5: Show problem before revealing answer
   const handleRandomize = () => {
     const newSeed = 'SEED-' + Math.floor(Math.random() * 900000 + 100000);
     setSeed(newSeed);
-    const count = taskCount === 4 ? 5 : taskCount; // random 5-6
+    const count = Math.random() < 0.5 ? 5 : 6; // randomly 5 or 6 tasks
     setTaskCount(count);
     const generated = generateRandomTaskSet(newSeed, count);
     setTasks(generated.tasks);
     setQuantum(generated.q);
     setValidationError(null);
+    setIsRevealed(false); // Requirement 5: show problem first, user clicks to reveal answer
   };
 
   // Function to load a specific seed
@@ -113,6 +190,7 @@ export default function App() {
     setTasks(preset.tasks);
     setTaskCount(preset.tasks.length);
     setValidationError(null);
+    setIsRevealed(true);
   };
 
   // Trigger test case 4: invalid input demonstration
@@ -154,6 +232,9 @@ export default function App() {
         onSetBaseTime={setBaseTime}
         onSelectPreset={handleSelectPreset}
         validationError={validationError}
+        onOpenSavedDatasets={() => setIsSavedModalOpen(true)}
+        savedDatasetsCount={savedDatasets.length}
+        onSaveCurrent={handleSaveCurrentDataset}
       />
 
       {/* Task & Process List Table */}
@@ -402,6 +483,20 @@ export default function App() {
         fcfs={fcfsResult}
         sjf={sjfResult}
         rr={rrResult}
+      />
+
+      <SavedDatasetsModal
+        isOpen={isSavedModalOpen}
+        onClose={() => setIsSavedModalOpen(false)}
+        savedDatasets={savedDatasets}
+        onSaveCurrent={handleSaveCurrentDataset}
+        onRecall={handleRecallDataset}
+        onDeleteSaved={handleDeleteSavedDataset}
+        onExportJSON={handleExportJSON}
+        onImportJSON={handleImportJSON}
+        currentSeed={seed}
+        currentQ={quantum}
+        currentTasksCount={tasks.length}
       />
 
       {/* Footer */}
